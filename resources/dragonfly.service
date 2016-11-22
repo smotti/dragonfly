@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish system stats to AWS CloudWatch
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c "exec &>> /var/log/dragonfly.log /usr/bin/dragonfly"
+KillMode=control-group
