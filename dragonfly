@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+# vi: set ft=python :
+
+import boto3
+import json
+from logging import getLogger, Formatter, StreamHandler, INFO, DEBUG
+from os import listdir, environ, statvfs
+from os.path import join
+import re
+from sys import argv, exit, stdout
+from time import time
+from urllib.request import urlopen
+
+
+ACCESS_KEY_ID = None
+SECRET_ACCESS_KEY = None
+SESSION_TOKEN = None
+INSTANCE_ID = None
+METADATA_URL = 'http://169.254.169.254/latest/meta-data/'
+LOG_FMT = '%(levelname)s %(asctime)s %(name)s %(filename)s:%(lineno)d %(message)s'
+LOG_DATEFMT = '%Y-%m-%dT%H:%M:%SZ'
+LOGGER = getLogger('dragonfly')
+LOG_LEVEL = eval(environ.get('LOG_LEVEL', 'INFO')) # Beware :D
+
+# Configure logging
+stdoutLogger = StreamHandler(stdout)
+
+LOGGER.setLevel(LOG_LEVEL)
+stdoutLogger.setLevel(LOG_LEVEL)
+
+stdoutLogger.setFormatter(Formatter(fmt=LOG_FMT, datefmt=LOG_DATEFMT))
+LOGGER.addHandler(stdoutLogger)
+
+
+def printUsage():
+    print('Usage: %s CONFIG')
+
+
+def parseConfigFile(f):
+    with open(f, 'r') as fp:
+        config = json.load(fp) 
+    return config
+
+
+def getSecurityCredentials(role):
+    response = urlopen(METADATA_URL + 'iam/security-credentials/' + role)
+    if response.getcode() != 200:
+        return {}
+    else:
+        data = response.read()
+        LOGGER.debug('Metadata: %s' % data)
+        return json.loads(data)
+
+
+def getInstanceId():
+    global INSTANCE_ID
+    response = urlopen(METADATA_URL + 'instance-id')
+    if response.getcode() != 200:
+        return ''
+    else:
+        iId = response.read()
+        LOGGER.debug('Instance Id: %s' % iId)
+        INSTANCE_ID =  iId
+    return iId
+
+
+def mockGetInstanceId():
+    global INSTANCE_ID
+    INSTANCE_ID = 'i-7bed2ce5'
+    return INSTANCE_ID
+
+
+def setAwsCredentials(cfg):
+    global ACCESS_KEY_ID, SECRET_ACCESS_KEY
+    '''
+    1. Checks for temporary security credentials for the given role via
+    the instance's metadata
+    2. If no metadata available use environment variables
+    3. If no environment variables use values from config file
+    '''
+    creds = {}
+    if 'role' in cfg:
+        LOGGER.debug('Use role %s to check for temporary instance security metadata' % cfg['role'])
+        creds = getSecurityCredentials(cfg['role'])
+        if 'AccessKeyId' in creds and 'SecretAccessKey' in creds:
+            ACCESS_KEY_ID = creds['AccessKeyId']
+            SECRET_ACCESS_KEY = creds['SecretAccessKey']
+            SECRET_ACCESS_KEY= creds['Token']
+            LOGGER.info('Using temporary security credentials')
+            return
+
+    if not creds:
+        ACCESS_KEY_ID = environ.get('ACCESS_KEY_ID')
+        SECRET_ACCESS_KEY = environ.get('SECRET_ACCESS_KEY')
+        if all(list(map(lambda v: v is not None, [ACCESS_KEY_ID, SECRET_ACCESS_KEY]))):
+            LOGGER.info('Using security credentials provided via environment variables')
+            return
+
+    if any(list(map(lambda v: v is None, [ACCESS_KEY_ID, SECRET_ACCESS_KEY]))):
+        if 'access_key_id' in cfg and 'secret_access_key' in cfg:
+            ACCESS_KEY_ID = cfg['access_key_id']
+            SECRET_ACCESS_KEY = cfg['secret_access_key']
+            LOGGER.info('Using security credentials from configuration file')
+            return
+
+    raise Exception('No security credentials found!')
+
+
+def measureMemoryUsage():
+    with open('/proc/meminfo', 'r') as fp:
+        allStats = fp.read()
+    stats = list(
+            filter(
+                lambda s: s.startswith('MemTotal') or s.startswith('MemAvailable'),
+                allStats.split('\n')))
+    if len(stats) != 2:
+        raise Exception('Failed to measure memory usage')
+
+    LOGGER.debug('Memory measurement: %s' % stats)
+
+    total = int(re.search('\d+', stats[0]).group())
+    avail = int(re.search('\d+', stats[1]).group())
+    usage = round(100 * (total - avail)/total, 2)
+    stats = [
+            {'MetricName': 'TotalMemory', 'Value': total, 'Unit': 'Kilobytes'},
+            {'MetricName': 'AvailableMemory', 'Value': avail, 'Unit': 'Kilobytes'},
+            {'MetricName': 'UsedMemory', 'Value': usage, 'Unit': 'Percent'}]
+    LOGGER.debug('Memory stats: %s' % stats)
+    
+    return stats
+
+
+def measureDiskUsage():
+    stats = statvfs('/')
+    LOGGER.debug('Disk measurement of root (/): %s' % str(stats))
+
+    toKB = 1024
+    total = round((stats.f_frsize * stats.f_blocks)/toKB, 2)
+    avail = round((stats.f_frsize * stats.f_bavail)/toKB, 2)
+    usage = round(100 * (total - avail)/total, 2)
+    diskStats = [
+            {'MetricName': 'TotalDiskSpaceRoot', 'Value': total, 'Unit': 'Kilobytes'},
+            {'MetricName': 'AvailableDiskSpaceRoot', 'Value': avail, 'Unit': 'Kilobytes'},
+            {'MetricName': 'UsedDiskSpaceRoot', 'Value': usage, 'Unit': 'Percent'}]
+    LOGGER.debug('Disk stats: %s' % diskStats)
+
+    return diskStats
+
+
+def procCmdLines():
+    '''
+    Get a list of the execution command lines of the systems running
+    processes.
+    '''
+    pids = [pid for pid in listdir('/proc') if pid.isdigit()]
+
+    ls = []
+    for pid in pids:
+        try:
+            l = open(join('/proc', pid, 'cmdline'), 'r').read()
+        except:
+            continue
+        else:
+            ls.append(l)
+
+    return list(filter(lambda l: len(l) != 0, ls))
+
+
+def processCount(regex, running):
+    count = 0
+    for l in running:
+#        LOGGER.debug('Try matching pattern in: %s' % l)
+        if re.match(regex, l) is not None:
+            count += 1
+    return count
+
+
+def checkProcessCounts(ps):
+    runningProcs = procCmdLines()
+
+    counts = []
+    for p in ps:
+        c = processCount(p['regex'], runningProcs)
+        LOGGER.debug('Process count for %s: %s' % (p['process'], c))
+        counts.append(
+                {'MetricName': 'ProcessCount' + p['process'].capitalize(),
+                 'Value': c,
+                 'Unit': 'Count'})
+
+    return counts
+
+
+def createBotoClient():
+    if SESSION_TOKEN is None:
+        return boto3.client(
+            'cloudwatch',
+            aws_access_key_id=ACCESS_KEY_ID,
+            aws_secret_access_key=SECRET_ACCESS_KEY)
+    else:
+        return boto3.client(
+            'cloudwatch',
+            aws_access_key_id=ACCESS_KEY_ID,
+            aws_secret_access_key=SECRET_ACCESS_KEY,
+            aws_session_token=SESSION_TOKEN)
+
+
+def setDimensions(dimensions, metrics):
+    for m in metrics:
+        m.update({'Dimensions': dimensions})
+
+
+def publishMetrics(cli, metrics, cfg=None):
+    [m.update({'Timestamp': int(time())}) for m in metrics]
+    LOGGER.debug('Added timestamp: %s', metrics)
+    response = cli.put_metric_data(Namespace='SCONE/Custom', MetricData=metrics)
+
+
+if __name__ == '__main__':
+    if len(argv) < 2:
+        printUsage()
+        exit(1)
+    else:
+        configFile = argv[1]
+        LOGGER.debug('Use configuration file %s' % configFile)
+
+    LOGGER.info('Parse configuration file')
+    try:
+        config = parseConfigFile(configFile) 
+        LOGGER.debug('Using configuration: %s' % config)
+    except Exception as e:
+        LOGGER.error(str(e))
+        exit(1)
+        
+    LOGGER.info('Set the AWS credentials')
+    try:
+        setAwsCredentials(config)
+    except Exception as e:
+        LOGGER.error(str(e))
+        exit(1)
+
+    LOGGER.info('Measure memory usage')
+    try:
+        memory = measureMemoryUsage()
+    except Exception as e:
+        LOGGER.error(str(e))
+    
+    LOGGER.info('Measure disk usage')
+    try:
+        disk = measureDiskUsage()
+    except Exception as e:
+        LOGGER.error(str(e))
+
+    procCounts = []
+    if 'processes' in config:
+        LOGGER.info('Check for process counts')
+        try:
+            procCounts = checkProcessCounts(config['processes'])
+        except Exception as e:
+            LOGGER.error(str(e))
+
+    LOGGER.info('Publish metrics')
+
+    metrics = [i for sublist in [memory, disk, procCounts] for i in sublist]
+    setDimensions([{'Name': 'InstanceId', 'Value': mockGetInstanceId()}], metrics)
+    LOGGER.debug('Set default dimensions: %s', metrics)
+    if 'dimensions' in config:
+        setDimensions(config['dimensions'], metrics)
+
+    cli = createBotoClient()
+    try:
+        publishMetrics(cli, metrics)
+    except Exception as e:
+        LOGGER.error('Failed to publish metrics: %s' % str(e))
+        exit(1)
+    else:
+        exit(0)

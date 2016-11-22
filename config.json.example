@@ -1,0 +1,12 @@
+{
+  "role": "s3access",
+  "processes": [
+    {
+      "process": "tomato",
+      "regex": ".*/usr/bin/tomate-gtk.*"
+    }
+  ],
+  "dimensions": [
+    {"Name": "AutoScalingGroupName", "Value": "sc_one_asg-pigeon_api"}    
+  ]
+}
