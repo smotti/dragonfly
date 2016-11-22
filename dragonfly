@@ -207,9 +207,10 @@ def createBotoClient(region):
 
 def setDimensions(dimensions, metrics):
     for m in metrics:
-        if 'Dimensions' in m:
-            for d in dimensions:
-                m['Dimensions'].append(d)
+        if 'Dimensions' not in m:
+            m['Dimensions'] = []
+        for d in dimensions:
+            m['Dimensions'].append(d)
 
 
 def publishMetrics(cli, metrics, cfg=None):
