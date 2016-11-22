@@ -48,7 +48,7 @@ def getSecurityCredentials(role):
     if response.getcode() != 200:
         return {}
     else:
-        data = response.read()
+        data = response.read().decode('utf-8')
         LOGGER.debug('Metadata: %s' % data)
         return json.loads(data)
 
