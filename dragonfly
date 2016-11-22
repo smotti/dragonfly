@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 # vi: set ft=python :
 
-import boto3
+import boto.ec2.cloudwatch
+from datetime import datetime
 import json
 from logging import getLogger, Formatter, StreamHandler, INFO, DEBUG
 from os import listdir, environ, statvfs
 from os.path import join
 import re
 from sys import argv, exit, stdout
-from time import time
+#from time import time
 from urllib.request import urlopen
 
 
@@ -118,8 +119,8 @@ def measureMemoryUsage():
 
     LOGGER.debug('Memory measurement: %s' % stats)
 
-    total = int(re.search('\d+', stats[0]).group())
-    avail = int(re.search('\d+', stats[1]).group())
+    total = float(re.search('\d+', stats[0]).group())
+    avail = float(re.search('\d+', stats[1]).group())
     usage = round(100 * (total - avail)/total, 2)
     stats = [
             {'MetricName': 'TotalMemory', 'Value': total, 'Unit': 'Kilobytes'},
@@ -190,15 +191,15 @@ def checkProcessCounts(ps):
     return counts
 
 
-def createBotoClient():
+def createBotoClient(region):
     if SESSION_TOKEN is None:
-        return boto3.client(
-            'cloudwatch',
+        return boto.ec2.cloudwatch.connect_to_region(
+            region,
             aws_access_key_id=ACCESS_KEY_ID,
             aws_secret_access_key=SECRET_ACCESS_KEY)
     else:
-        return boto3.client(
-            'cloudwatch',
+        return boto.ec2.cloudwatch.connect_to_region(
+            region,
             aws_access_key_id=ACCESS_KEY_ID,
             aws_secret_access_key=SECRET_ACCESS_KEY,
             aws_session_token=SESSION_TOKEN)
@@ -210,9 +211,21 @@ def setDimensions(dimensions, metrics):
 
 
 def publishMetrics(cli, metrics, cfg=None):
-    [m.update({'Timestamp': int(time())}) for m in metrics]
+    [m.update({'Timestamp': datetime.utcnow()}) for m in metrics]
     LOGGER.debug('Added timestamp: %s', metrics)
-    response = cli.put_metric_data(Namespace='SCONE/Custom', MetricData=metrics)
+
+    for m in metrics:
+        try:
+            response = cli.put_metric_data(
+                'SCONE/Custom',
+                m['MetricName'],
+                m['Value'],
+                m['Timestamp'],
+                m['Unit'],
+                m['Dimensions'])
+        except Exception as e:
+            LOGGER.error('Failed to publish %s: %s' % (m['MetricName'], str(e)))
+            continue
 
 
 if __name__ == '__main__':
@@ -261,12 +274,12 @@ if __name__ == '__main__':
     LOGGER.info('Publish metrics')
 
     metrics = [i for sublist in [memory, disk, procCounts] for i in sublist]
-    setDimensions([{'Name': 'InstanceId', 'Value': getInstanceId()}], metrics)
+    setDimensions([{'Name': 'InstanceId', 'Value': mockGetInstanceId()}], metrics)
     LOGGER.debug('Set default dimensions: %s', metrics)
     if 'dimensions' in config:
         setDimensions(config['dimensions'], metrics)
 
-    cli = createBotoClient()
+    cli = createBotoClient(config['region'])
     try:
         publishMetrics(cli, metrics)
     except Exception as e:
