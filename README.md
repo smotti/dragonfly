@@ -41,15 +41,15 @@ A list of allowed options:
 * processes
   * A list of dicts defining processes that should be counted
   * A dict must have the following keys:
-    * process: A name for the process to count. This is used to create the
-      metric name as follows *ProcessCount<process>*
-    * regex: A regular expression that is used to count matches in the systems
-      process table that identify the specified process
+      * process: A name for the process to count. This is used to create the
+        metric name as follows *ProcessCount<process>*
+      * regex: A regular expression that is used to count matches in the systems
+        process table that identify the specified process
 * dimensions
   * A way of grouping the metrics (see [here](http://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ec2-metricscollected.html#ec2-metric-dimensions) for examples)
   * A list of dicts defining dimensions
   * A dict must contain the following keys (capitalization **important**):
-    * Name: The name of the dimension (i.e. InstanceId, AutoScalingGroupName, ...)
-    * Value: The value for that dimension (i.e. if the Name is InstanceId the
-      Value would be the id of the instance that publishes the metrics)
+      * Name: The name of the dimension (i.e. InstanceId, AutoScalingGroupName, ...)
+      * Value: The value for that dimension (i.e. if the Name is InstanceId the
+        Value would be the id of the instance that publishes the metrics)
 
