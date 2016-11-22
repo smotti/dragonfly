@@ -72,7 +72,7 @@ def mockGetInstanceId():
 
 
 def setAwsCredentials(cfg):
-    global ACCESS_KEY_ID, SECRET_ACCESS_KEY
+    global ACCESS_KEY_ID, SECRET_ACCESS_KEY, SESSION_TOKEN
     '''
     1. Checks for temporary security credentials for the given role via
     the instance's metadata
@@ -198,6 +198,7 @@ def createBotoClient(region):
             aws_access_key_id=ACCESS_KEY_ID,
             aws_secret_access_key=SECRET_ACCESS_KEY)
     else:
+        LOGGER.debug('Session token: %s' % SESSION_TOKEN)
         return boto.ec2.cloudwatch.connect_to_region(
             region,
             aws_access_key_id=ACCESS_KEY_ID,
