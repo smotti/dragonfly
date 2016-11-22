@@ -274,7 +274,7 @@ if __name__ == '__main__':
     LOGGER.info('Publish metrics')
 
     metrics = [i for sublist in [memory, disk, procCounts] for i in sublist]
-    setDimensions([{'Name': 'InstanceId', 'Value': mockGetInstanceId()}], metrics)
+    setDimensions([{'InstanceId': getInstanceId()}], metrics)
     LOGGER.debug('Set default dimensions: %s', metrics)
     if 'dimensions' in config:
         setDimensions(config['dimensions'], metrics)

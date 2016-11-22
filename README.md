@@ -48,8 +48,5 @@ A list of allowed options:
 * dimensions
   * A way of grouping the metrics (see [here](http://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ec2-metricscollected.html#ec2-metric-dimensions) for examples)
   * A list of dicts defining dimensions
-  * A dict must contain the following keys (capitalization **important**):
-      * Name: The name of the dimension (i.e. InstanceId, AutoScalingGroupName, ...)
-      * Value: The value for that dimension (i.e. if the Name is InstanceId the
-        Value would be the id of the instance that publishes the metrics)
+    * i.e.: {'name1': 'value1', 'name2': 'value2'}
 
