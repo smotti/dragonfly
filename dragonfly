@@ -86,7 +86,7 @@ def setAwsCredentials(cfg):
         if 'AccessKeyId' in creds and 'SecretAccessKey' in creds:
             ACCESS_KEY_ID = creds['AccessKeyId']
             SECRET_ACCESS_KEY = creds['SecretAccessKey']
-            SECRET_ACCESS_KEY= creds['Token']
+            SESSION_TOKEN = creds['Token']
             LOGGER.info('Using temporary security credentials')
             return
 
