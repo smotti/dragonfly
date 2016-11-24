@@ -7,7 +7,7 @@ A set of monitoring scripts that publish metrics to AWS CloudWatch.
 # Requirements
 
 * Python 3.x
-  * boto3 (AWS SDK)
+  * boto (AWS SDK) or on debian python3-boto
 
 # Usage
 
