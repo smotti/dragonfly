@@ -2,7 +2,7 @@
 
 A set of monitoring scripts that publish metrics to AWS CloudWatch.
 
-**Note the namespace used is SCONE/Custom!**
+**Note the namespace used is MyNamespace/Custom!**. This should be changed within the code.
 
 # Requirements
 

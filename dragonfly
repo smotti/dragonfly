@@ -221,7 +221,7 @@ def publishMetrics(cli, metrics, cfg=None):
     for m in metrics:
         try:
             response = cli.put_metric_data(
-                'SCONE/Custom',
+                'MyNamespace/Custom',
                 m['MetricName'],
                 m['Value'],
                 m['Timestamp'],
